@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   Bell,
@@ -21,6 +22,14 @@ import {
   Gavel,
 } from "lucide-react";
 
+import { createClient } from "@/lib/supabase/client";
+import {
+  DEFAULT_LANGUAGE,
+  getLanguageCodeByName,
+} from "@/lib/i18n/config";
+import { getTranslations } from "@/lib/i18n/translations";
+import type { LanguageCode } from "@/lib/i18n/config";
+
 interface SidebarProps {
   mobileOpen: boolean;
   onClose: () => void;
@@ -28,74 +37,74 @@ interface SidebarProps {
 
 const navigation = [
   {
-    label: "Dashboard",
+    key: "dashboard",
     icon: Home,
     href: "/dashboard",
   },
   {
-    label: "My Farm",
+    key: "myFarm",
     icon: Tractor,
     href: "/farm",
   },
   {
-    label: "Crops & Farming",
+    key: "cropsAndFarming",
     icon: Leaf,
     href: "/crops",
   },
   {
-    label: "Market & Selling",
+    key: "marketAndSelling",
     icon: Store,
     href: "/market",
   },
   {
-    label: "Schemes & Loans",
+    key: "schemesAndLoans",
     icon: FileText,
     href: "/schemes",
   },
   {
-    label: "AI Assistant",
+    key: "aiAssistant",
     icon: Bot,
     href: "/ai-assistant",
   },
-];
+] as const;
 
 const operationsNavigation = [
   {
-    label: "Transport",
+    key: "transport",
     icon: Truck,
     href: "/transport",
   },
   {
-    label: "Mandi & Godown",
+    key: "mandiAndGodown",
     icon: MapPinned,
     href: "/facilities",
   },
   {
-    label: "Marketplace",
+    key: "marketplace",
     icon: Package,
     href: "/marketplace",
   },
   {
-    label: "Auction",
+    key: "auction",
     icon: Gavel,
     href: "/auction",
   },
   {
-    label: "Sales & Transactions",
+    key: "salesAndTransactions",
     icon: Wallet,
     href: "/sales",
   },
   {
-    label: "Profit & Analysis",
+    key: "profitAndAnalysis",
     icon: BarChart3,
     href: "/profit",
   },
   {
-    label: "Farm History",
+    key: "farmHistory",
     icon: Leaf,
     href: "/history",
   },
-];
+] as const;
 
 const secondaryNavigation = [
   {
@@ -118,6 +127,39 @@ const secondaryNavigation = [
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
 
+  const [language, setLanguage] =
+    useState<LanguageCode>(DEFAULT_LANGUAGE);
+
+  const tr = getTranslations(language);
+
+  useEffect(() => {
+    const loadLanguage = async () => {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("farmer_profiles")
+        .select("preferred_language")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (profile?.preferred_language) {
+        setLanguage(
+          getLanguageCodeByName(profile.preferred_language),
+        );
+      }
+    };
+
+    loadLanguage();
+  }, []);
+
   const isActive = (href: string) => {
     if (href === "/dashboard") {
       return pathname === "/dashboard";
@@ -127,14 +169,18 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   };
 
   const renderNavigationItem = (
-    item: (typeof navigation)[number] | (typeof operationsNavigation)[number],
+    item:
+      | (typeof navigation)[number]
+      | (typeof operationsNavigation)[number],
   ) => {
     const Icon = item.icon;
     const active = isActive(item.href);
 
+    const label = tr[item.key];
+
     return (
       <Link
-        key={item.label}
+        key={item.href}
         href={item.href}
         onClick={onClose}
         className={[
@@ -155,9 +201,9 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           }
         />
 
-        <span>{item.label}</span>
+        <span>{label}</span>
 
-        {item.label === "AI Assistant" && (
+        {item.key === "aiAssistant" && (
           <span className="ml-auto rounded-full bg-brand-lime px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black">
             AI
           </span>
@@ -184,8 +230,10 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           "fixed inset-y-0 left-0 z-50 flex w-72 flex-col",
           "border-r border-border bg-surface",
           "transform transition-transform duration-300",
-              mobileOpen ? "translate-x-0" : "-translate-x-full",
-              "lg:!translate-x-0",
+          mobileOpen
+            ? "translate-x-0"
+            : "-translate-x-full",
+          "lg:!translate-x-0",
         ].join(" ")}
       >
         {/* Brand */}
@@ -205,7 +253,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               </h1>
 
               <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-foreground-muted">
-                Smart Farming
+                {tr.smartFarming}
               </p>
             </div>
           </Link>
@@ -252,7 +300,8 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           <div className="space-y-1">
             {secondaryNavigation.map((item) => {
               const Icon = item.icon;
-              const active = item.href !== "#" && isActive(item.href);
+              const active =
+                item.href !== "#" && isActive(item.href);
 
               if (item.href === "#") {
                 return (
@@ -314,11 +363,11 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">
-                  Farmer Profile
+                  {tr.farmerProfile}
                 </p>
 
                 <p className="truncate text-xs text-foreground-muted">
-                  View your profile
+                  {tr.viewProfile}
                 </p>
               </div>
 

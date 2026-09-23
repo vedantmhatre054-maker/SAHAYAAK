@@ -54,6 +54,10 @@ export default function FarmSetupPage() {
   const [farmName, setFarmName] = useState("");
   const [location, setLocation] = useState("");
   const [state, setState] = useState("");
+
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [district, setDistrict] = useState("");
   const [village, setVillage] = useState("");
   const [landArea, setLandArea] = useState("");
@@ -99,7 +103,7 @@ export default function FarmSetupPage() {
       const { data: farm, error: farmError } = await supabase
         .from("farms")
         .select(
-          "id, farm_name, location, state, district, village, land_area, area_unit, soil_type, water_source, irrigation_type",
+          "id, farm_name, location, state, district, village, land_area, area_unit, soil_type, water_source, irrigation_type, latitude, longitude"
         )
         .eq("farmer_id", profile.id)
         .order("created_at", { ascending: true })
@@ -119,6 +123,8 @@ export default function FarmSetupPage() {
         setState(farm.state ?? "");
         setDistrict(farm.district ?? "");
         setVillage(farm.village ?? "");
+        setLatitude(farm.latitude ? String(farm.latitude) : "");
+        setLongitude(farm.longitude ? String(farm.longitude) : "");
         setLandArea(farm.land_area ? String(farm.land_area) : "");
         setAreaUnit(farm.area_unit ?? "acre");
         setSoilType(farm.soil_type ?? "");
@@ -130,6 +136,61 @@ export default function FarmSetupPage() {
     };
     loadFarm();
   }, [router, supabase]);
+
+  const handleGetLocation = () => {
+  if (!navigator.geolocation) {
+    setErrorMessage("Geolocation is not supported by your browser.");
+    return;
+  }
+
+  setIsGettingLocation(true);
+  setErrorMessage("");
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const latitudeValue = position.coords.latitude;
+      const longitudeValue = position.coords.longitude;
+
+      setLatitude(latitudeValue.toString());
+      setLongitude(longitudeValue.toString());
+
+      try {
+        const response = await fetch(
+  `/api/reverse-geocode?lat=${latitudeValue}&lon=${longitudeValue}`,
+);
+
+        if (!response.ok) {
+          throw new Error("Unable to fetch address.");
+        }
+
+        const data = await response.json();
+
+        setLocation(data.address || "Location detected");
+      } catch (error) {
+        console.error("Reverse geocoding error:", error);
+        setErrorMessage(
+          "Coordinates captured, but the address could not be detected.",
+        );
+      } finally {
+        setIsGettingLocation(false);
+      }
+    },
+    (error) => {
+      console.error("Location error:", error.message);
+
+      setErrorMessage(
+        "Unable to get your location. Please allow location access or enter it manually.",
+      );
+
+      setIsGettingLocation(false);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    },
+  );
+};
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -150,6 +211,8 @@ export default function FarmSetupPage() {
 
     const farmData = {
       farmer_id: farmerId,
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
       farm_name: farmName.trim(),
       location: location.trim() || null,
       state: state.trim() || null,
@@ -359,6 +422,28 @@ export default function FarmSetupPage() {
                     className="h-12 w-full rounded-xl border border-border bg-background pl-11 pr-4 text-sm outline-none transition placeholder:text-foreground-muted/60 focus:border-brand-green focus:ring-2 focus:ring-brand-green/10"
                   />
                 </div>
+                            </div>
+
+              <div className="mt-3 sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={handleGetLocation}
+                  disabled={isGettingLocation}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-brand-green/30 bg-brand-green/5 px-4 text-sm font-semibold text-brand-green transition hover:bg-brand-green/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <MapPin size={17} />
+                  {isGettingLocation
+                    ? "Getting location..."
+                    : "Get My Location"}
+                </button>
+
+                {latitude && longitude && (
+                  <p className="mt-2 text-xs text-foreground-muted">
+                    GPS coordinates captured:{" "}
+                    {Number(latitude).toFixed(6)},{" "}
+                    {Number(longitude).toFixed(6)}
+                  </p>
+                )}
               </div>
             </div>
           </section>

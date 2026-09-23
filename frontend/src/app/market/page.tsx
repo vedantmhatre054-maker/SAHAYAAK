@@ -17,8 +17,17 @@ import {
   TrendingUp,
   Truck,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
+import LiveMarketSearch from "@/components/market/live-market-search";
+
+type LiveMarketPrice = {
+  id: string;
+  modal_price: number | null;
+  unit: string | null;
+  commodities: { name: string } | null;
+  markets: { name: string } | null;
+};
 
 const commodities = [
   {
@@ -104,13 +113,49 @@ const priceHistory = [
 export default function MarketPage() {
   const [selectedCommodity, setSelectedCommodity] = useState("Maize");
   const [searchQuery, setSearchQuery] = useState("");
+  const [livePrices, setLivePrices] = useState<LiveMarketPrice[]>([]);
 
-  const selectedData = useMemo(
-    () =>
-      commodities.find((commodity) => commodity.name === selectedCommodity) ??
-      commodities[0],
-    [selectedCommodity],
-  );
+  useEffect(() => {
+    const loadLivePrices = async () => {
+      try {
+        const response = await fetch("/api/market-prices");
+
+        if (!response.ok) return;
+
+        const data = (await response.json()) as LiveMarketPrice[];
+        setLivePrices(data);
+      } catch (error) {
+        console.error("Unable to load live market overview:", error);
+      }
+    };
+
+    void loadLivePrices();
+  }, []);
+
+  const selectedData = useMemo(() => {
+    const fallback =
+      commodities.find(
+        (commodity) => commodity.name === selectedCommodity,
+      ) ?? commodities[0]!;
+
+    const liveItem = livePrices.find(
+      (item) => item.commodities?.name === selectedCommodity,
+    );
+
+    if (!liveItem) return fallback;
+
+    return {
+      ...fallback,
+      price:
+        liveItem.modal_price === null
+          ? "N/A"
+          : `₹${liveItem.modal_price.toLocaleString("en-IN")}`,
+      market: liveItem.markets?.name ?? fallback.market,
+      unit: liveItem.unit ?? fallback.unit,
+      change: "Live",
+      direction: "up",
+    };
+  }, [livePrices, selectedCommodity]);
 
   const filteredMarkets = markets.filter((market) => {
     const query = searchQuery.toLowerCase().trim();
@@ -159,6 +204,11 @@ export default function MarketPage() {
           </button>
         </div>
 
+        {/* Live market search */}
+        <div className="mb-7">
+          <LiveMarketSearch />
+        </div>
+
         {/* Commodity selector + overview */}
         <div className="mb-6 grid gap-4 lg:grid-cols-[1fr_280px]">
           <div className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
@@ -203,8 +253,7 @@ export default function MarketPage() {
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               </div>
             </div>
-
-            <div className="mt-7 grid gap-4 sm:grid-cols-3">
+                        <div className="mt-7 grid gap-4 sm:grid-cols-3">
               <div className="rounded-xl bg-background p-4">
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   Current price
@@ -278,9 +327,13 @@ export default function MarketPage() {
             </p>
 
             <div className="mt-5 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
-              <span className="text-xs text-white/60">Signal strength</span>
+              <span className="text-xs text-white/60">
+                Signal strength
+              </span>
 
-              <span className="text-sm font-bold text-lime">Positive</span>
+              <span className="text-sm font-bold text-lime">
+                Positive
+              </span>
             </div>
           </div>
         </div>
@@ -344,6 +397,7 @@ export default function MarketPage() {
                           <p className="text-[10px] font-semibold text-foreground">
                             ₹{item.price}
                           </p>
+
                           <p className="mt-1 text-[10px] text-muted-foreground">
                             {item.day}
                           </p>
@@ -356,8 +410,7 @@ export default function MarketPage() {
             </div>
           </div>
         </div>
-
-        {/* Recommendation */}
+                {/* Recommendation */}
         <div className="mb-7 overflow-hidden rounded-2xl border border-primary/15 bg-primary">
           <div className="grid lg:grid-cols-[1fr_370px]">
             <div className="p-6 sm:p-8">
@@ -415,20 +468,27 @@ export default function MarketPage() {
                     <p className="text-[10px] text-white/45">
                       Expected price
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-white">
                       ₹2,520/q
                     </p>
                   </div>
 
                   <div className="rounded-xl bg-white/5 p-3">
-                    <p className="text-[10px] text-white/45">Distance</p>
-                    <p className="mt-1 text-sm font-bold text-white">74 km</p>
+                    <p className="text-[10px] text-white/45">
+                      Distance
+                    </p>
+
+                    <p className="mt-1 text-sm font-bold text-white">
+                      74 km
+                    </p>
                   </div>
 
                   <div className="rounded-xl bg-white/5 p-3">
                     <p className="text-[10px] text-white/45">
                       Transport estimate
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-white">
                       ₹1,200
                     </p>
@@ -438,6 +498,7 @@ export default function MarketPage() {
                     <p className="text-[10px] text-white/45">
                       Recommendation
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-lime">
                       94 / 100
                     </p>
@@ -540,6 +601,7 @@ export default function MarketPage() {
                     <p className="text-[10px] text-muted-foreground">
                       Expected price
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-foreground">
                       {market.price}/q
                     </p>
@@ -549,6 +611,7 @@ export default function MarketPage() {
                     <p className="text-[10px] text-muted-foreground">
                       Distance
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-foreground">
                       {market.distance}
                     </p>
@@ -558,6 +621,7 @@ export default function MarketPage() {
                     <p className="text-[10px] text-muted-foreground">
                       Transport
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-foreground">
                       {market.transport}
                     </p>
@@ -567,6 +631,7 @@ export default function MarketPage() {
                     <p className="text-[10px] text-muted-foreground">
                       Est. net
                     </p>
+
                     <p className="mt-1 text-sm font-bold text-primary">
                       {market.net}
                     </p>
@@ -590,8 +655,7 @@ export default function MarketPage() {
             ))}
           </div>
         </div>
-
-        {/* Selling preparation */}
+                {/* Selling preparation */}
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-border bg-surface p-6">
             <div className="flex items-center gap-3">

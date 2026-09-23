@@ -16,6 +16,10 @@ import {
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AppShell } from "@/components/layout/app-shell";
+import {
+  getLanguageCodeByName,
+} from "@/lib/i18n/config";
+import { getTranslations } from "@/lib/i18n/translations";
 export default async function DashboardPage() {
   const supabase = await createClient();
 
@@ -44,11 +48,17 @@ export default async function DashboardPage() {
     redirect("/profile");
   }
 
+  const language = getLanguageCodeByName(
+  profile.preferred_language,
+);
+
+const tr = getTranslations(language);
+
   // Get farmer's farm
   const { data: farm, error: farmError } = await supabase
     .from("farms")
     .select(
-      "id, farm_name, location, state, district, village, land_area, area_unit, soil_type, water_source, irrigation_type",
+      "id, farm_name, location, state, district, village, land_area, area_unit, soil_type, water_source, irrigation_type, latitude, longitude",
     )
     .eq("farmer_id", profile.id)
     .order("created_at", { ascending: true })
@@ -57,6 +67,114 @@ export default async function DashboardPage() {
 
   if (farmError) {
     console.error("Farm loading error:", farmError.message);
+  }
+
+  
+  
+  // Get and save current weather for the farmer's farm
+  let weather: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    apparent_temperature: number;
+    precipitation: number;
+    weather_code: number;
+    wind_speed_10m: number;
+  } | null = null;
+
+  if (
+    farm?.latitude !== null &&
+    farm?.latitude !== undefined &&
+    farm?.longitude !== null &&
+    farm?.longitude !== undefined
+  ) {
+    const weatherUrl = new URL(
+      "https://api.open-meteo.com/v1/forecast",
+    );
+
+    weatherUrl.searchParams.set(
+      "latitude",
+      String(farm.latitude),
+    );
+    weatherUrl.searchParams.set(
+      "longitude",
+      String(farm.longitude),
+    );
+    weatherUrl.searchParams.set(
+      "current",
+      [
+        "temperature_2m",
+        "relative_humidity_2m",
+        "apparent_temperature",
+        "precipitation",
+        "weather_code",
+        "wind_speed_10m",
+      ].join(","),
+    );
+    weatherUrl.searchParams.set("timezone", "auto");
+
+    try {
+      const weatherResponse = await fetch(weatherUrl.toString(), {
+        cache: "no-store",
+      });
+
+      if (weatherResponse.ok) {
+        const weatherData = await weatherResponse.json();
+        weather = weatherData.current;
+
+        if (weather) {
+          const { data: latestRecord, error: latestError } =
+            await supabase
+              .from("weather_records")
+              .select("recorded_at")
+              .eq("farm_id", farm.id)
+              .order("recorded_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+          if (latestError) {
+            console.error(
+              "Latest weather record error:",
+              latestError.message,
+            );
+          }
+
+          const latestTimestamp = latestRecord?.recorded_at
+            ? new Date(latestRecord.recorded_at).getTime()
+            : 0;
+
+          const oneHourInMilliseconds = 60 * 60 * 1000;
+
+          const shouldSave =
+            !latestTimestamp ||
+            Date.now() - latestTimestamp >= oneHourInMilliseconds;
+
+          if (shouldSave) {
+            const { error: insertError } = await supabase
+              .from("weather_records")
+              .insert({
+                farm_id: farm.id,
+                recorded_at: new Date().toISOString(),
+                temperature: weather.temperature_2m,
+                humidity: weather.relative_humidity_2m,
+                rainfall: weather.precipitation,
+                wind_speed: weather.wind_speed_10m,
+                weather_condition: String(weather.weather_code),
+                source: "Open-Meteo",
+                raw_data: weatherData,
+              });
+
+            if (insertError) {
+              console.error(
+                "Weather record insert error:",
+                insertError.message,
+              );
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Dashboard weather loading error:", error);
+    }
   }
     // Get farmer's active crop cycles
   let activeCropCount = 0;
@@ -142,7 +260,7 @@ export default async function DashboardPage() {
               </p>
 
               <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-foreground-muted">
-                Smart Farming
+                {tr.smartFarming}
               </p>
             </div>
           </div>
@@ -170,11 +288,11 @@ export default async function DashboardPage() {
 
           <div className="relative z-10 max-w-2xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-lime">
-              Farmer dashboard
+              {tr.dashboard}
             </p>
 
             <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Welcome back, {farmerName}
+              {tr.welcomeBack}, {farmerName}
             </h1>
 
             <p className="mt-4 max-w-xl text-sm leading-6 text-white/70 sm:text-base">
@@ -187,7 +305,7 @@ export default async function DashboardPage() {
                 href="/farm"
                 className="mt-6 inline-flex items-center gap-2 rounded-xl bg-brand-lime px-5 py-3 text-sm font-bold text-black transition hover:opacity-90"
               >
-                Set up your farm
+                {tr.setupFarm}
                 <ArrowRight size={17} />
               </a>
             )}
@@ -205,11 +323,11 @@ export default async function DashboardPage() {
         <section className="mt-8">
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-green">
-              Your overview
+              {tr.yourOverview}
             </p>
 
             <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">
-              Farm at a glance
+              {tr.farmAtAGlance}
             </h2>
           </div>
 
@@ -227,7 +345,7 @@ export default async function DashboardPage() {
               </div>
 
               <p className="mt-5 text-sm text-foreground-muted">
-                Farm profile
+                {tr.farmProfile}
               </p>
 
               <p className="mt-1 text-xl font-bold">
@@ -254,7 +372,7 @@ export default async function DashboardPage() {
               </div>
 
               <p className="mt-5 text-sm text-foreground-muted">
-                Active crops
+                {tr.activeCrops}
               </p>
 
                 <p className="mt-1 text-xl font-bold">{activeCropCount}</p>
@@ -280,14 +398,20 @@ export default async function DashboardPage() {
               </div>
 
               <p className="mt-5 text-sm text-foreground-muted">
-                Current conditions
+                {tr.currentConditions}
               </p>
 
-              <p className="mt-1 text-xl font-bold">—</p>
+              <p className="mt-1 text-xl font-bold">
+              {weather
+                ? `${weather.temperature_2m}°C`
+                : "Unavailable"}
+            </p>
 
-              <p className="mt-2 text-xs leading-5 text-foreground-muted">
-                Weather will be connected after farm location services.
-              </p>
+            <p className="mt-2 text-xs leading-5 text-foreground-muted">
+              {weather
+                ? `Feels like ${weather.apparent_temperature}°C • Humidity ${weather.relative_humidity_2m}% • Wind ${weather.wind_speed_10m} km/h`
+                : "Add farm coordinates to view live weather."}
+            </p>
             </div>
 
             {/* Market */}
@@ -303,7 +427,7 @@ export default async function DashboardPage() {
               </div>
 
               <p className="mt-5 text-sm text-foreground-muted">
-                Market intelligence
+                {tr.marketIntelligence}
               </p>
 
               <p className="mt-1 text-xl font-bold">Ready</p>
@@ -315,12 +439,12 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* Farm information */}
+        {/* {tr.farmInformation} */}
         {farm && (
           <section className="mt-8">
             <div className="mb-4">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-green">
-                Farm information
+                {tr.farmInformation}
               </p>
 
               <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">
@@ -337,7 +461,7 @@ export default async function DashboardPage() {
 
                   <div>
                     <p className="text-xs text-foreground-muted">
-                      Location
+                      {tr.location}
                     </p>
 
                     <p className="mt-1 text-sm font-bold">
@@ -355,7 +479,7 @@ export default async function DashboardPage() {
 
                   <div>
                     <p className="text-xs text-foreground-muted">
-                      Land area
+                      {tr.landArea}
                     </p>
 
                     <p className="mt-1 text-sm font-bold">
@@ -373,7 +497,7 @@ export default async function DashboardPage() {
 
                   <div>
                     <p className="text-xs text-foreground-muted">
-                      Water source
+                      {tr.waterSource}
                     </p>
 
                     <p className="mt-1 text-sm font-bold">
@@ -391,7 +515,7 @@ export default async function DashboardPage() {
 
                   <div>
                     <p className="text-xs text-foreground-muted">
-                      Irrigation
+                      {tr.irrigation}
                     </p>
 
                     <p className="mt-1 text-sm font-bold">
@@ -404,11 +528,11 @@ export default async function DashboardPage() {
           </section>
         )}
 
-        {/* Quick actions */}
+        {/* {tr.quickActions} */}
         <section className="mt-8">
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-green">
-              Quick actions
+              {tr.quickActions}
             </p>
 
             <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">
@@ -449,7 +573,7 @@ export default async function DashboardPage() {
                 <Sprout size={21} />
               </div>
 
-              <h3 className="mt-5 font-bold">Explore crops</h3>
+              <h3 className="mt-5 font-bold">{tr.exploreCrops}</h3>
 
               <p className="mt-2 text-sm leading-5 text-foreground-muted">
                 Get recommendations based on your farm conditions.
@@ -469,7 +593,7 @@ export default async function DashboardPage() {
                   <BarChart3 size={21} />
                 </div>
 
-                <h3 className="mt-5 font-bold">Check markets</h3>
+                <h3 className="mt-5 font-bold">{tr.checkMarkets}</h3>
 
                 <p className="mt-2 text-sm leading-5 text-foreground-muted">
                   Explore market prices and future selling opportunities.
@@ -489,7 +613,7 @@ export default async function DashboardPage() {
                 <MessageCircle size={21} />
               </div>
 
-              <h3 className="mt-5 font-bold">Ask SAHAYAAK AI</h3>
+              <h3 className="mt-5 font-bold">{tr.askSahayakAI}</h3>
 
               <p className="mt-2 text-sm leading-5 text-foreground-muted">
                 Get farming guidance using text, voice and images.
@@ -503,7 +627,7 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* Getting started */}
+        {/* {tr.gettingStarted} */}
         <section className="mt-8 grid gap-5 lg:grid-cols-[1.35fr_0.65fr]">
           <div className="rounded-2xl border border-border bg-surface p-6 sm:p-7">
             <div className="flex items-start gap-4">
@@ -513,7 +637,7 @@ export default async function DashboardPage() {
 
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-green">
-                  Getting started
+                  {tr.gettingStarted}
                 </p>
 
                 <h3 className="mt-1 text-xl font-bold">
@@ -539,7 +663,7 @@ export default async function DashboardPage() {
 
             <div className="mt-3 flex items-center justify-between text-xs">
               <span className="font-semibold text-foreground-muted">
-                Setup progress
+                {tr.setupProgress}
               </span>
 
               <span className="font-bold text-brand-green">
@@ -554,7 +678,7 @@ export default async function DashboardPage() {
             </div>
 
             <h3 className="mt-5 text-lg font-bold">
-              Need farming guidance?
+              {tr.needFarmingGuidance}
             </h3>
 
             <p className="mt-2 text-sm leading-6 text-foreground-muted">
@@ -570,7 +694,7 @@ export default async function DashboardPage() {
                 <MessageCircle size={21} />
               </div>
 
-              <h3 className="mt-5 font-bold">Ask SAHAYAAK AI</h3>
+              <h3 className="mt-5 font-bold">{tr.askSahayakAI}</h3>
 
               <p className="mt-2 text-sm leading-5 text-foreground-muted">
                 Get farming guidance, crop insights, and answers in your preferred language.
@@ -588,3 +712,5 @@ export default async function DashboardPage() {
     </AppShell>
   );
 }
+
+

@@ -106,14 +106,16 @@ const loans = [
 ];
 
 export default function SchemesPage() {
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [schemes, setSchemes] = useState<Scheme[]>([]);
-  const [savedSchemes, setSavedSchemes] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+const [activeCategory, setActiveCategory] = useState("All");
+const [searchQuery, setSearchQuery] = useState("");
+const [schemes, setSchemes] = useState<Scheme[]>([]);
+const [savedSchemes, setSavedSchemes] = useState<string[]>([]);
+const [farmerId, setFarmerId] = useState<string | null>(null);
+const [savingSchemeId, setSavingSchemeId] = useState<string | null>(null);
+const [isLoading, setIsLoading] = useState(true);
+const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+useEffect(() => {
     const loadSchemes = async () => {
       const supabase = createClient();
 
@@ -175,7 +177,9 @@ export default function SchemesPage() {
       }
 
       if (profile) {
-        const { data: savedData, error: savedError } = await supabase
+  setFarmerId(profile.id);
+
+  const { data: savedData, error: savedError } = await supabase
           .from("scheme_saves")
           .select("scheme_id")
           .eq("farmer_id", profile.id);
@@ -213,14 +217,49 @@ export default function SchemesPage() {
     return matchesCategory && matchesSearch;
   });
 
-  const toggleSaved = (id: string) => {
-    setSavedSchemes((current) =>
-      current.includes(id)
-        ? current.filter((schemeId) => schemeId !== id)
-        : [...current, id],
-    );
-  };
+  const toggleSaved = async (id: string) => {
+  if (!farmerId || savingSchemeId) {
+    return;
+  }
 
+  const supabase = createClient();
+  const isSaved = savedSchemes.includes(id);
+
+  setSavingSchemeId(id);
+
+  if (isSaved) {
+    const { error } = await supabase
+      .from("scheme_saves")
+      .delete()
+      .eq("farmer_id", farmerId)
+      .eq("scheme_id", id);
+
+    if (error) {
+      console.error("Scheme unsave error:", error.message);
+      setSavingSchemeId(null);
+      return;
+    }
+
+    setSavedSchemes((current) =>
+      current.filter((schemeId) => schemeId !== id),
+    );
+  } else {
+    const { error } = await supabase.from("scheme_saves").insert({
+      farmer_id: farmerId,
+      scheme_id: id,
+    });
+
+    if (error) {
+      console.error("Scheme save error:", error.message);
+      setSavingSchemeId(null);
+      return;
+    }
+
+    setSavedSchemes((current) => [...current, id]);
+  }
+
+  setSavingSchemeId(null);
+};
   return (
     <AppShell>
       <section className="mx-auto w-full max-w-7xl">
@@ -458,6 +497,7 @@ export default function SchemesPage() {
                       <button
                         type="button"
                         onClick={() => toggleSaved(scheme.id)}
+                        disabled={savingSchemeId === scheme.id}
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
                           isSaved
                             ? "bg-lime/15 text-primary"

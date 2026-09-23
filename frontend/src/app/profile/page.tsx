@@ -11,17 +11,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-const languages = [
-  "English",
-  "Hindi",
-  "Marathi",
-  "Tamil",
-  "Telugu",
-  "Kannada",
-  "Gujarati",
-  "Bengali",
-  "Punjabi",
-];
+import { SUPPORTED_LANGUAGES } from "@/lib/i18n/config";
 
 export default function FarmerProfilePage() {
   const supabase = createClient();
@@ -341,11 +331,11 @@ export default function FarmerProfilePage() {
                 }
                 className="h-12 w-full rounded-xl border border-border bg-background px-4 text-sm outline-none transition focus:border-brand-green focus:ring-2 focus:ring-brand-green/10"
               >
-                {languages.map((language) => (
-                  <option key={language} value={language}>
-                    {language}
-                  </option>
-                ))}
+                {SUPPORTED_LANGUAGES.map((language) => (
+                <option key={language.code} value={language.name}>
+                  {language.nativeName} ({language.name})
+                </option>
+              ))}
               </select>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bell, Menu, Moon, Search, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/providers/theme-provider";
 
 interface TopbarProps {
   onMenuClick: () => void;
