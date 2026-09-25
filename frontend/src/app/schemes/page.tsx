@@ -106,16 +106,14 @@ const loans = [
 ];
 
 export default function SchemesPage() {
-const [activeCategory, setActiveCategory] = useState("All");
-const [searchQuery, setSearchQuery] = useState("");
-const [schemes, setSchemes] = useState<Scheme[]>([]);
-const [savedSchemes, setSavedSchemes] = useState<string[]>([]);
-const [farmerId, setFarmerId] = useState<string | null>(null);
-const [savingSchemeId, setSavingSchemeId] = useState<string | null>(null);
-const [isLoading, setIsLoading] = useState(true);
-const [loadError, setLoadError] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
+  const [savedSchemes, setSavedSchemes] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-useEffect(() => {
+  useEffect(() => {
     const loadSchemes = async () => {
       const supabase = createClient();
 
@@ -177,9 +175,7 @@ useEffect(() => {
       }
 
       if (profile) {
-  setFarmerId(profile.id);
-
-  const { data: savedData, error: savedError } = await supabase
+        const { data: savedData, error: savedError } = await supabase
           .from("scheme_saves")
           .select("scheme_id")
           .eq("farmer_id", profile.id);
@@ -217,49 +213,14 @@ useEffect(() => {
     return matchesCategory && matchesSearch;
   });
 
-  const toggleSaved = async (id: string) => {
-  if (!farmerId || savingSchemeId) {
-    return;
-  }
-
-  const supabase = createClient();
-  const isSaved = savedSchemes.includes(id);
-
-  setSavingSchemeId(id);
-
-  if (isSaved) {
-    const { error } = await supabase
-      .from("scheme_saves")
-      .delete()
-      .eq("farmer_id", farmerId)
-      .eq("scheme_id", id);
-
-    if (error) {
-      console.error("Scheme unsave error:", error.message);
-      setSavingSchemeId(null);
-      return;
-    }
-
+  const toggleSaved = (id: string) => {
     setSavedSchemes((current) =>
-      current.filter((schemeId) => schemeId !== id),
+      current.includes(id)
+        ? current.filter((schemeId) => schemeId !== id)
+        : [...current, id],
     );
-  } else {
-    const { error } = await supabase.from("scheme_saves").insert({
-      farmer_id: farmerId,
-      scheme_id: id,
-    });
+  };
 
-    if (error) {
-      console.error("Scheme save error:", error.message);
-      setSavingSchemeId(null);
-      return;
-    }
-
-    setSavedSchemes((current) => [...current, id]);
-  }
-
-  setSavingSchemeId(null);
-};
   return (
     <AppShell>
       <section className="mx-auto w-full max-w-7xl">
@@ -293,19 +254,19 @@ useEffect(() => {
         </div>
 
         {/* Personalized recommendation banner */}
-        <div className="mb-7 overflow-hidden rounded-2xl border border-primary/15 bg-primary">
+        <div className="mb-7 overflow-hidden rounded-2xl border border-[#B9D8C7] bg-[#F1F7F3] dark:border-[#28523E] dark:bg-[#0F1D16]">
           <div className="grid lg:grid-cols-[1fr_330px]">
             <div className="p-6 sm:p-8">
-              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-lime">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#1A6E47] dark:text-[#A9D8BE]">
                 <Sprout className="h-4 w-4" />
                 RECOMMENDED FOR YOUR FARM
               </div>
 
-              <h2 className="max-w-2xl text-2xl font-bold leading-tight text-white sm:text-3xl">
+              <h2 className="max-w-2xl text-2xl font-bold leading-tight text-[#123426] dark:text-white sm:text-3xl">
                 Find support that fits your farming needs.
               </h2>
 
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#486458] dark:text-white/70">
                 SAHAYAAK can use your farm profile, crops, location, and other
                 relevant information to help you discover potentially useful
                 schemes and financial resources.
@@ -320,7 +281,7 @@ useEffect(() => {
                 ].map((item) => (
                   <span
                     key={item}
-                    className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[10px] font-medium text-white/80"
+                    className="rounded-lg border border-[#C8DED1] bg-white/70 px-3 py-2 text-[10px] font-medium text-[#315C48] dark:border-white/10 dark:bg-white/5 dark:text-white/75"
                   >
                     {item}
                   </span>
@@ -329,42 +290,42 @@ useEffect(() => {
             </div>
 
             <div className="flex items-center p-5 sm:p-7">
-              <div className="w-full rounded-2xl border border-white/15 bg-white/5 p-5">
+              <div className="w-full rounded-2xl border border-[#C8DED1] bg-white/70 p-5 dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-lime text-primary">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#DDF0E4] text-[#1A6E47] dark:bg-[#86BE37] dark:text-[#123426]">
                     <CheckCircle2 className="h-5 w-5" />
                   </div>
 
                   <div>
-                    <p className="text-sm font-semibold text-white">
+                    <p className="text-sm font-semibold text-[#173C2C] dark:text-white">
                       Eligibility assistance
                     </p>
-                    <p className="text-xs text-white/55">
+                    <p className="text-xs text-[#60786D] dark:text-white/55">
                       Understand before you apply
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-5 space-y-2">
-                  <div className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
-                    <span className="text-xs text-white/65">
+                  <div className="flex items-center justify-between rounded-lg bg-[#E7F2EB] px-3 py-2 dark:bg-white/5">
+                    <span className="text-xs text-[#557267] dark:text-white/65">
                       Farm information
                     </span>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-lime" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#1A6E47] dark:text-[#A9D8BE]" />
                   </div>
 
-                  <div className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
-                    <span className="text-xs text-white/65">
+                  <div className="flex items-center justify-between rounded-lg bg-[#E7F2EB] px-3 py-2 dark:bg-white/5">
+                    <span className="text-xs text-[#557267] dark:text-white/65">
                       Crop information
                     </span>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-lime" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#1A6E47] dark:text-[#A9D8BE]" />
                   </div>
 
-                  <div className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
-                    <span className="text-xs text-white/65">
+                  <div className="flex items-center justify-between rounded-lg bg-[#E7F2EB] px-3 py-2 dark:bg-white/5">
+                    <span className="text-xs text-[#557267] dark:text-white/65">
                       Scheme matching
                     </span>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-lime" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#1A6E47] dark:text-[#A9D8BE]" />
                   </div>
                 </div>
               </div>
@@ -497,7 +458,6 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => toggleSaved(scheme.id)}
-                        disabled={savingSchemeId === scheme.id}
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
                           isSaved
                             ? "bg-lime/15 text-primary"

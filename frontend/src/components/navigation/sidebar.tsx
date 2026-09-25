@@ -120,7 +120,7 @@ const secondaryNavigation = [
   {
     label: "Settings",
     icon: Settings,
-    href: "#",
+    href: "/settings",
   },
 ];
 
@@ -300,25 +300,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           <div className="space-y-1">
             {secondaryNavigation.map((item) => {
               const Icon = item.icon;
-              const active =
-                item.href !== "#" && isActive(item.href);
-
-              if (item.href === "#") {
-                return (
-                  <button
-                    key={item.label}
-                    type="button"
-                    className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-foreground-muted transition-all hover:bg-background hover:text-foreground"
-                  >
-                    <Icon
-                      size={19}
-                      className="group-hover:text-brand-green"
-                    />
-
-                    <span>{item.label}</span>
-                  </button>
-                );
-              }
+              const active = isActive(item.href);
 
               return (
                 <Link

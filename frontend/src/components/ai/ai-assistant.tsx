@@ -1,4 +1,5 @@
 "use client";
+
 import Image from "next/image";
 import {
   ArrowUp,
@@ -13,15 +14,81 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useState, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  DEFAULT_LANGUAGE,
+  getLanguageCodeByName,
+  getLanguageByCode,
+  SUPPORTED_LANGUAGES,
+  type LanguageCode,
+} from "@/lib/i18n/config";
 
 type Message = {
-  id: number;
+  id: string;
   role: "assistant" | "user";
   text: string;
   time: string;
   image?: string;
 };
+
+type Language = {
+  code: LanguageCode;
+  name: string;
+  nativeName: string;
+};
+
+
+type SpeechRecognitionResultEvent = Event & {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+};
+
+type SpeechRecognitionInstance = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
+
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
+const speechLanguageMap: Record<LanguageCode, string> = {
+  en: "en-IN",
+  hi: "hi-IN",
+  bn: "bn-IN",
+  te: "te-IN",
+  mr: "mr-IN",
+  ta: "ta-IN",
+  ur: "ur-IN",
+  gu: "gu-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  or: "or-IN",
+  pa: "pa-IN",
+  as: "as-IN",
+  ma: "mai-IN",
+  sa: "sa-IN",
+  kok: "kok-IN",
+  ne: "ne-IN",
+  doi: "doi-IN",
+  mni: "mni-IN",
+  brx: "brx-IN",
+  ks: "ks-IN",
+  sd: "sd-IN",
+};
+
+const languages: readonly Language[] = SUPPORTED_LANGUAGES;
 
 const suggestedQuestions = [
   {
@@ -49,13 +116,13 @@ const suggestedQuestions = [
 export function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 1,
+      id: "initial-assistant-1",
       role: "assistant",
       text: "Namaste! I'm your SAHAYAAK farming assistant. I can help you understand your crops, farming practices, markets, schemes, and other decisions related to your farm.",
       time: "10:24 AM",
     },
     {
-      id: 2,
+      id: "initial-assistant-2",
       role: "assistant",
       text: "You can type your question, speak naturally, or show me a photo of your crop or produce.",
       time: "10:24 AM",
@@ -64,11 +131,151 @@ export function AIAssistant() {
 
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-    const [isListening, setIsListening] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
-    const [nextMessageId, setNextMessageId] = useState(3);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImageDataUrl, setSelectedImageDataUrl] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const speechRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>(
+    getLanguageByCode(DEFAULT_LANGUAGE) ?? languages[0],
+  );
+
+  useEffect(() => {
+    const loadPreferredLanguage = async () => {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("farmer_profiles")
+        .select("preferred_language")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (profile?.preferred_language) {
+        const languageCode = getLanguageCodeByName(
+          profile.preferred_language,
+        );
+        const language = getLanguageByCode(languageCode);
+
+        if (language) {
+          setSelectedLanguage(language);
+        }
+      }
+    };
+
+    void loadPreferredLanguage();
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      speechRecognitionRef.current?.stop();
+      speechRecognitionRef.current = null;
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+  const cleanTextForSpeech = (text: string) => {
+    return text
+      .replace(/\*{2,}/g, "")
+      .replace(/\*/g, "")
+      .replace(/`/g, "")
+      .replace(/#{1,6}\s?/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  const speakResponse = (text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    const speechText = cleanTextForSpeech(text);
+
+    if (!speechText) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const targetLanguage =
+      speechLanguageMap[selectedLanguage.code] ?? "en-IN";
+    const voices = window.speechSynthesis.getVoices();
+
+    const targetBaseLanguage = targetLanguage.split("-")[0].toLowerCase();
+
+    const matchingVoice =
+      voices.find(
+        (voice) => voice.lang.toLowerCase() === targetLanguage.toLowerCase(),
+      ) ??
+      voices.find(
+        (voice) => voice.lang.toLowerCase().startsWith(`${targetBaseLanguage}-`),
+      );
+
+    const utterance = new SpeechSynthesisUtterance(speechText);
+
+    // Only force the requested language when the browser actually
+    // has a voice for that language. Otherwise use the browser's
+    // default voice instead of throwing a synthesis error.
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+      utterance.lang = matchingVoice.lang;
+    } else if (voices.length > 0) {
+      utterance.voice = voices[0];
+      utterance.lang = voices[0].lang;
+      console.warn(
+        `No speech voice found for ${targetLanguage}. Using ${voices[0].lang} instead.`,
+      );
+    } else {
+      utterance.lang = targetLanguage;
+    }
+
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = (event) => {
+      // "interrupted" / "canceled" is expected when the user presses Stop
+      // or when a new response replaces an existing speech request.
+      if (event.error === "interrupted" || event.error === "canceled") {
+        setIsSpeaking(false);
+        return;
+      }
+
+      console.error("Speech synthesis error:", {
+        name: event.error,
+        language: utterance.lang,
+        voice: utterance.voice?.name ?? "default",
+      });
+      setIsSpeaking(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
 
   const handleImageSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -84,6 +291,22 @@ export function AIAssistant() {
     const imageUrl = URL.createObjectURL(file);
     setSelectedImage(imageUrl);
 
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setSelectedImageDataUrl(reader.result);
+      }
+    };
+
+    reader.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      setSelectedImage(null);
+      setSelectedImageDataUrl(null);
+      console.error("Could not read selected image.");
+    };
+
+    reader.readAsDataURL(file);
     event.target.value = "";
   };
 
@@ -93,43 +316,76 @@ export function AIAssistant() {
     }
 
     setSelectedImage(null);
+    setSelectedImageDataUrl(null);
   };
 
-  const sendMessage = (messageText?: string) => {
+  const sendMessage = async (messageText?: string) => {
     const text = (messageText ?? input).trim();
 
     if (!text && !selectedImage) {
       return;
     }
 
-    const userMessageId = nextMessageId;
-    const assistantMessageId = nextMessageId + 1;
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
+    const userText = text || "Please analyze this image for me.";
+    const imageDataUrl = selectedImageDataUrl;
 
     const newMessage: Message = {
-    id: userMessageId,
-    role: "user",
-        text: text || "Please analyze this image for me.",
+      id: userMessageId,
+      role: "user",
+      text: userText,
       time: new Date().toLocaleTimeString([], {
         hour: "numeric",
         minute: "2-digit",
       }),
-      image: selectedImage ?? undefined,
+      image: imageDataUrl ?? selectedImage ?? undefined,
     };
 
     setMessages((current) => [...current, newMessage]);
-    setNextMessageId((current) => current + 2);
     setInput("");
     removeSelectedImage();
-
     setIsThinking(true);
 
-    window.setTimeout(() => {
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          language: selectedLanguage.name,
+          conversationId,
+          image: imageDataUrl ?? undefined,
+          messages: [
+            ...messages.map((message) => ({
+              role: message.role,
+              content: message.text,
+            })),
+            {
+              role: "user",
+              content: userText,
+            },
+          ],
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "AI request failed.");
+      }
+
+      if (data.conversationId) {
+        setConversationId(data.conversationId);
+      }
+
       setMessages((current) => [
         ...current,
         {
           id: assistantMessageId,
           role: "assistant",
-          text: "I understand your question. Once the SAHAYAAK AI service is connected, I will use your farm profile, crop information, agricultural knowledge, and relevant data to provide personalized guidance here.",
+          text: data.reply,
           time: new Date().toLocaleTimeString([], {
             hour: "numeric",
             minute: "2-digit",
@@ -137,21 +393,95 @@ export function AIAssistant() {
         },
       ]);
 
+      } catch (error) {
+      console.error("AI assistant error:", error);
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Sorry, I couldn't connect to the SAHAYAAK AI service right now. Please try again.",
+          time: new Date().toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+
+      } finally {
       setIsThinking(false);
-    }, 1200);
+    }
   };
 
   const handleSuggestion = (text: string) => {
-    sendMessage(text);
+    void sendMessage(text);
   };
 
   const toggleListening = () => {
-    setIsListening((current) => !current);
+    if (isListening) {
+      speechRecognitionRef.current?.stop();
+      return;
+    }
 
-    if (!isListening) {
-      window.setTimeout(() => {
-        setIsListening(false);
-      }, 2500);
+    const speechWindow = window as SpeechRecognitionWindow;
+    const SpeechRecognition =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: "Voice input is not supported in this browser. Please use Google Chrome or Microsoft Edge, or type your question instead.",
+          time: new Date().toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        },
+      ]);
+        return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = speechLanguageMap[selectedLanguage.code] ?? "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        transcript += event.results[index][0].transcript;
+      }
+
+      setInput(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event);
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    speechRecognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error("Could not start speech recognition:", error);
+      setIsListening(false);
+      speechRecognitionRef.current = null;
     }
   };
 
@@ -177,95 +507,33 @@ export function AIAssistant() {
           </div>
 
           {/* Language selector */}
-          <button
-            type="button"
-            className="flex h-10 w-fit items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-foreground transition hover:border-primary/40 hover:bg-surface-muted"
+          <select
+            value={selectedLanguage.code}
+            onChange={(event) => {
+              const language = languages.find(
+                (item) => item.code === event.target.value,
+              );
+
+              if (language) {
+                setSelectedLanguage(language);
+              }
+            }}
+            className="h-10 w-fit rounded-xl border border-border bg-surface px-4 text-sm font-medium text-foreground outline-none transition focus:border-primary/50"
+            aria-label="Select AI language"
           >
-            <span className="text-primary">EN</span>
-            <span className="text-muted-foreground">English</span>
-            <span className="text-xs text-muted-foreground">⌄</span>
-          </button>
-        </div>
-      </div>
-
-      {/* SPEAK → SHOW → UNDERSTAND → ACT */}
-      <div className="mb-6 overflow-hidden rounded-2xl border border-primary/20 bg-primary">
-        <div className="grid md:grid-cols-[1.1fr_1fr]">
-          <div className="p-6 sm:p-8">
-            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-lime">
-              <Sparkles className="h-4 w-4" />
-              AI CROP & FARM ASSISTANT
-            </div>
-
-            <h2 className="max-w-xl text-2xl font-bold leading-tight text-white sm:text-3xl">
-              Speak naturally. Show the problem. Get practical guidance.
-            </h2>
-
-            <p className="mt-3 max-w-xl text-sm leading-6 text-white/75">
-              Ask questions in your preferred language, upload a crop or
-              produce image, and let SAHAYAAK combine what you say, what it
-              sees, and what it knows about your farm.
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-2">
-              {["01 SPEAK", "02 SHOW", "03 UNDERSTAND", "04 ACT"].map(
-                (step) => (
-                  <span
-                    key={step}
-                    className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[10px] font-semibold tracking-[0.12em] text-white/85"
-                  >
-                    {step}
-                  </span>
-                ),
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center p-5 sm:p-7">
-            <div className="w-full rounded-2xl border border-white/15 bg-black/10 p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-lime text-primary">
-                  <Mic className="h-5 w-5" />
-                </div>
-
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    Ask SAHAYAAK
-                  </p>
-                  <p className="text-xs text-white/60">
-                    Voice + Image + Farm Context
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
-                <p className="text-sm text-white/85">
-                  “What is wrong with my tomato plant?”
-                </p>
-
-                <div className="mt-4 flex items-center gap-2">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full w-3/4 rounded-full bg-lime" />
-                  </div>
-
-                  <span className="text-[10px] text-white/50">
-                    analyzing
-                  </span>
-                </div>
-              </div>
-
-              <p className="mt-3 text-[10px] text-white/45">
-                Image analysis + crop context + agricultural knowledge
-              </p>
-            </div>
-          </div>
+            {languages.map((language) => (
+              <option key={language.code} value={language.code}>
+                {language.nativeName} ({language.name})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* Main assistant */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Chat */}
-        <div className="flex min-h-[680px] flex-col overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="sticky top-20 flex h-[min(640px,calc(100dvh-18rem))] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-border bg-surface">
           {/* Chat header */}
           <div className="flex items-center justify-between border-b border-border px-5 py-4 sm:px-6">
             <div className="flex items-center gap-3">
@@ -285,7 +553,7 @@ export function AIAssistant() {
                 </div>
 
                 <p className="text-xs text-muted-foreground">
-                  Your personal farming companion
+                  Responding in {selectedLanguage.name}
                 </p>
               </div>
             </div>
@@ -297,7 +565,7 @@ export function AIAssistant() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 space-y-5 overflow-y-auto bg-background/40 p-4 sm:p-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain bg-background/40 p-4 pb-6 sm:p-6">
             {messages.map((message) => {
               const isUser = message.role === "user";
 
@@ -338,14 +606,14 @@ export function AIAssistant() {
                         <div className="mb-3 overflow-hidden rounded-xl">
                           <div className="relative h-56 w-full">
                             <Image
-                                src={message.image}
-                                alt="Uploaded crop"
-                                fill
-                                unoptimized
-                                className="object-cover"
-                                sizes="(max-width: 640px) 88vw, 500px"
+                              src={message.image}
+                              alt="Uploaded crop"
+                              fill
+                              unoptimized
+                              className="object-cover"
+                              sizes="(max-width: 640px) 88vw, 500px"
                             />
-                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -363,10 +631,18 @@ export function AIAssistant() {
                         {!isUser && (
                           <button
                             type="button"
+                            onClick={() => {
+                              if (isSpeaking) {
+                                stopSpeaking();
+                              } else {
+                                speakResponse(message.text);
+                              }
+                            }}
                             className="inline-flex items-center gap-1 transition hover:text-primary"
+                            aria-label={isSpeaking ? "Stop voice response" : "Listen to response"}
                           >
                             <Volume2 className="h-3 w-3" />
-                            Listen
+                            {isSpeaking ? "Stop" : "Listen"}
                           </button>
                         )}
                       </div>
@@ -399,15 +675,15 @@ export function AIAssistant() {
             <div className="border-t border-border bg-surface-muted px-4 py-3 sm:px-5">
               <div className="relative inline-flex overflow-hidden rounded-xl border border-border">
                 <div className="relative h-20 w-20">
-                    <Image
-                        src={selectedImage}
-                        alt="Selected crop"
-                        fill
-                        unoptimized
-                        className="object-cover"
-                        sizes="80px"
-                    />
-                    </div>
+                  <Image
+                    src={selectedImage}
+                    alt="Selected crop"
+                    fill
+                    unoptimized
+                    className="object-cover"
+                    sizes="80px"
+                  />
+                </div>
 
                 <button
                   type="button"
@@ -422,7 +698,7 @@ export function AIAssistant() {
           )}
 
           {/* Composer */}
-          <div className="border-t border-border bg-surface p-4 sm:p-5">
+          <div className="shrink-0 border-t border-border bg-surface p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.18)] sm:p-5">
             <div className="flex items-end gap-2 rounded-2xl border border-border bg-background p-2 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
               <input
                 ref={fileInputRef}
@@ -467,7 +743,7 @@ export function AIAssistant() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    sendMessage();
+                    void sendMessage();
                   }
                 }}
                 rows={1}
@@ -483,7 +759,9 @@ export function AIAssistant() {
                     ? "bg-lime text-primary"
                     : "text-muted-foreground hover:bg-surface-muted hover:text-primary"
                 }`}
-                aria-label={isListening ? "Stop listening" : "Start voice input"}
+                aria-label={
+                  isListening ? "Stop listening" : "Start voice input"
+                }
                 title={isListening ? "Stop listening" : "Speak"}
               >
                 <Mic className="h-5 w-5" />
@@ -491,7 +769,7 @@ export function AIAssistant() {
 
               <button
                 type="button"
-                onClick={() => sendMessage()}
+                onClick={() => void sendMessage()}
                 disabled={!input.trim() && !selectedImage}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Send message"
@@ -634,6 +912,11 @@ export function AIAssistant() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Listening...
                 </>
+              ) : isSpeaking ? (
+                <>
+                  <Volume2 className="h-4 w-4" />
+                  AI is speaking...
+                </>
               ) : (
                 <>
                   <Mic className="h-4 w-4" />
@@ -641,9 +924,20 @@ export function AIAssistant() {
                 </>
               )}
             </button>
+
+            {isSpeaking && (
+              <button
+                type="button"
+                onClick={stopSpeaking}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-muted-foreground transition hover:bg-surface-muted hover:text-foreground"
+              >
+                <Volume2 className="h-4 w-4" />
+                Stop voice response
+              </button>
+            )}
           </div>
 
-          {/* Future capabilities */}
+          {/* Farming context */}
           <div className="rounded-2xl border border-primary/15 bg-primary/5 p-5">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
